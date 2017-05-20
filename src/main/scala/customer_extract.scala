@@ -20,15 +20,19 @@ object customer_extract {
       .appName("customer_extract")
       .config("spark.some.config.option", "some-value")
       .getOrCreate()
+
+
+    import java.io._
+    val writer = new PrintWriter(new File("/root/re.txt"))
     import spark.implicits._
-    val df = spark.read.json("/spark_data/spark_sql_data.json")
+    val df = spark.read.json("hdfs://master:8020/log1/log.log")
+    df.createGlobalTempView("da")
     df.createOrReplaceTempView("data")
     // Global temporary view is tied to a system preserved database `global_temp`
 
 
     //获取所有用户Mac地址
-    val distinct_mac_DF = spark.sql("SELECT  DISTINCT mac FROM data")
-    val mac_array = distinct_mac_DF.collect()
+    val mac_array = spark.sql("SELECT  DISTINCT mac FROM data").collect()
 
 
     var i = 0
@@ -36,14 +40,28 @@ object customer_extract {
     val outer = new Breaks
     val inner = new Breaks
     val every_visit = new Breaks
+    val lenth = mac_array.length
     //对每一个用户（Mac）进行循环
-    while (i < mac_array.length) {
+    while (i < lenth) {
       outer.breakable {
-        var mac = mac_array(i)
-        var sql = "SELECT  `time` from data where mac = '" + mac + "' order by `time`  limit 1"
-        var min_time = spark.sql(sql).collect() (0).asInstanceOf[Row].getInt(0)
-        sql = "SELECT  `time` from data where mac = '" + mac + "' order by `time` desc limit 1"
-        var max_time = spark.sql(sql).collect() (0).asInstanceOf[Row].getInt(0)
+
+
+        println(i+ "  / " +  mac_array.length)
+        println("对每一个用户（Mac）进行循环")
+        var mac = mac_array(i)(0)
+        println(mac)
+        println("1")
+        var sql = "SELECT  `time` from data where mac = '" + mac + "' order by `time` "
+        println("2")
+        println(spark.sql(sql).collect())
+        val re = spark.sql(sql).collect()
+        var min_time = re(0)(0).toString.toInt
+        println(min_time)
+        val le = re.length
+//        sql = "SELECT  `time` from data where mac = '" + mac + "' order by `time` desc limit 1"
+        println("4")
+        var max_time = re (le-1)(0).toString.toInt
+        println("对每一个用户（Mac）进行循环")
         //第一层过滤，过滤掉 只检测到一次的用户
         if (min_time == max_time) {
           outer.break
@@ -66,11 +84,12 @@ object customer_extract {
 
         /* 在最小时间和最大时间按照时间间隔从小到大循环*/
         inner.breakable {
-          while (now_time < (max_time + 300)) {
-
+          while (now_time <  max_time ) {
+            println("在最小时间和最大时间按照时间间隔从小到大循环")
+            println(i+ "  / " + lenth)
             every_visit.breakable {
               sql = "SELECT  count(*) num from data where mac ='" + mac + "' and `time`>" + now_time + ""
-              new_num = spark.sql(sql).collect() (0).toString.toInt
+              new_num = spark.sql(sql).collect() (0)(0).toString.toInt
 
               if ((flag_a == 1) && (flag_b == 1)) {
                 old_num = new_num
@@ -95,12 +114,12 @@ object customer_extract {
                   var sql13 = "SELECT  `time`  next_time from data where mac ='" + mac + "' and `time`> " + leave_time + " order by `time`  limit 1"; //SQL语句
 
 
-                  if (spark.sql(sql13).collect()(0).asInstanceOf[Row].isNullAt(0)) {
+                  if (spark.sql(sql13).collect()(0).size == 0 ) {
 
                     inner.break
                   }
 
-                  next_start_time = spark.sql(sql13).collect()(0).asInstanceOf[Row].getInt(0)
+                  next_start_time = spark.sql(sql13).collect()(0)(0).toString.toInt
 
 
                   now_time = next_start_time
@@ -130,20 +149,20 @@ object customer_extract {
 
         }
         //将 result_array 结果 转换为Json格式 ，存入 result_string
+        var  result_string = ""
         for (i <- result_array) {
+          println("将 result_array 结果 转换为Json格式 ，存入 result_string")
+
+          println(i + "  / " +  lenth)
           var vist_string = """{"mac":"""" + mac +"""",""" +""""in_time":""" + i(0) + "," +""""out_time":""" + i(1) + "," +""""stay_time":""" + (i(1) - i(0)) + "}\n"
-          result_string = result_string + vist_string
-
+          result_string= result_string + vist_string
         }
-
+        writer.write(result_string)
       }
       i = i + 1
     }
     //将结果集 存入 文件
-    import java.io._
-    val writer = new PrintWriter(new File("\\sparkdata\\visit_records.json"))
 
-    writer.write(result_string)
     writer.close()
 
 
