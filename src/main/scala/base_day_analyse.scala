@@ -23,7 +23,7 @@ object base_day_analyse {
       .config("spark.some.config.option", "some-value")
       .getOrCreate()
     import spark.implicits._
-    val df1 = spark.read.json("hdfs://master:8020/re1/*.txt")
+    val df1 = spark.read.json("hdfs://master:8020/re1/*.txt").cache()
     df1.createOrReplaceTempView("visit")
     // Global temporary view is tied to a system preserved database `global_temp`
     var result_string = ""
